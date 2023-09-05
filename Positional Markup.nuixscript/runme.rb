@@ -1,16 +1,16 @@
 java_import javax.swing.JOptionPane
-import javax.swing.JComboBox
-import javax.swing.JDialog
-import javax.swing.JFrame
-import javax.swing.JLabel
-import javax.swing.JPanel
-import javax.swing.JProgressBar
+java_import javax.swing.JComboBox
+java_import javax.swing.JDialog
+java_import javax.swing.JFrame
+java_import javax.swing.JLabel
+java_import javax.swing.JPanel
+java_import javax.swing.JProgressBar
 debug=false
 
 class ProgressDialog < JDialog
 	def initialize(settings,title="Progress Dialog")
 		@bars=settings
-		super nil, true
+		super nil, false
 		body=JPanel.new(java.awt.GridLayout.new(settings.keys.size*2,1))
 		settings.each do | label,config|
 			body.add(JLabel.new(label))
@@ -23,12 +23,8 @@ class ProgressDialog < JDialog
 		self.setDefaultCloseOperation JFrame::DISPOSE_ON_CLOSE
 		self.setSize 400, settings.keys.size*90
 		self.setLocationRelativeTo nil
-		Thread.new{
-				yield self
-			sleep(0.2)
-			self.dispose()
-		}
-		self.setVisible true
+    self.setVisible true
+    yield self
 	end
 
 	def increment(label)
@@ -93,7 +89,7 @@ window.closeAllTabs()
 pilotPlots={}
 hasHighlights=false
 pilotItems.each do | pilotItem |
-	plots={}
+  	plots={}
 	pilotItem.getPrintedImage().getPages().each_with_index do | myPrintedPage,pageNumber |
 		myPrintedPage.getMarkups(pilotMarkup).each do | markup |
 			plotMatch={
@@ -120,63 +116,70 @@ if(!hasHighlights)
 end
 
 settings={
-	"progress"=>{"min"=>0,"max"=>currentSelectedItems.size()},
-	"success"=>{"min"=>0,"max"=>currentSelectedItems.size()},
-	"fail"=>{"min"=>0,"max"=>currentSelectedItems.size()},
+	"progress"=>{"min"=>0,"max"=>$currentSelectedItems.size()},
+	"success"=>{"min"=>0,"max"=>$currentSelectedItems.size()},
+	"fail"=>{"min"=>0,"max"=>$currentSelectedItems.size()},
 }
 
+puts "markup about to take place"
 failedItems=[]
 ProgressDialog.new(settings,"Markup in progress") do | pd |
-	currentSelectedItems.each do | item|
-		if(item.getPrintedImage().getPages().nil?)
-			passedAccuracy=false
-		else
-			thisPages=item.getPrintedImage().getPages().size()
-			itemPages=item.getPrintedImage().getPages()
-			itemPages.each do | myPrintedPage |
-				myPrintedPage.getMarkups(applyMarkup).each do | existingMarkupItem|
-					myPrintedPage.remove(applyMarkup,existingMarkupItem)
-				end
-			end
-			passedAccuracy=true
-			pilotPlots.each do | pilotGuid, pilotPlots |
-				passedAccuracy=true
-				itemPages.each_with_index do | myPrintedPage,pageNumber |
-					pilots=pilotPlots.select{|id,plot|(plot["pageNumber"]==pageNumber) && (plot["highlight"]==true)}
-					pilots.each do | id,plotMatch |
-						text=myPrintedPage.getText(plotMatch['x'],plotMatch['y'],plotMatch['w'],plotMatch['h']).strip().to_s
-						if(text!=plotMatch["text"])
-							passedAccuracy=false
-							if(debug)
-								puts item.getGuid() + "\t" + pilotGuid + ": Text at coordinates does not match pilot: Expected '" + plotMatch["text"] + "', Actual '" + text + "'"
-							end
-							break
-						end
-					end
-					if(!passedAccuracy)
-						break
-					end
-				end
-				if(passedAccuracy)
-					itemPages.each_with_index do | myPrintedPage,pageNumber |
-						pilotPlots.select{|id,plot|(plot["pageNumber"]==pageNumber) && (plot["highlight"]==false)}.each do | id,plotMatch |
-							myPrintedPage.createRedaction(applyMarkup,plotMatch['x'],plotMatch['y'],plotMatch['w'],plotMatch['h'])
-						end
-					end
-					break
-				end
-			end
-		end
-		pd.increment("progress")
-		if(!passedAccuracy)
-			pd.increment("fail")
-			failedItems.push(item.getGuid())
-		else
-			pd.increment("success")
-		end
-	end
-	
+  begin
+    $currentSelectedItems.each do | item|
+      puts item.getGuid()
+      if(item.getPrintedImage().getPages().nil?)
+        passedAccuracy=false
+      else
+        thisPages=item.getPrintedImage().getPages().size()
+        itemPages=item.getPrintedImage().getPages()
+        itemPages.each do | myPrintedPage |
+          myPrintedPage.getMarkups(applyMarkup).each do | existingMarkupItem|
+            myPrintedPage.remove(applyMarkup,existingMarkupItem)
+          end
+        end
+        passedAccuracy=true
+        pilotPlots.each do | pilotGuid, pilotPlots |
+          passedAccuracy=true
+          itemPages.each_with_index do | myPrintedPage,pageNumber |
+            pilots=pilotPlots.select{|id,plot|(plot["pageNumber"]==pageNumber) && (plot["highlight"]==true)}
+            pilots.each do | id,plotMatch |
+              text=myPrintedPage.getText(plotMatch['x'],plotMatch['y'],plotMatch['w'],plotMatch['h']).strip().to_s
+              if(text!=plotMatch["text"])
+                passedAccuracy=false
+                if(debug)
+                  puts item.getGuid() + "\t" + pilotGuid + ": Text at coordinates does not match pilot: Expected '" + plotMatch["text"] + "', Actual '" + text + "'"
+                end
+                break
+              end
+            end
+            if(!passedAccuracy)
+              break
+            end
+          end
+          if(passedAccuracy)
+            itemPages.each_with_index do | myPrintedPage,pageNumber |
+              pilotPlots.select{|id,plot|(plot["pageNumber"]==pageNumber) && (plot["highlight"]==false)}.each do | id,plotMatch |
+                myPrintedPage.createRedaction(applyMarkup,plotMatch['x'],plotMatch['y'],plotMatch['w'],plotMatch['h'])
+              end
+            end
+            break
+          end
+        end
+      end
+      pd.increment("progress")
+      if(!passedAccuracy)
+        pd.increment("fail")
+        failedItems.push(item.getGuid())
+      else
+        pd.increment("success")
+      end
+    end
+  rescue Exception => ex
+    puts ex.message
+    puts ex.backtrace
+  end	
 end
+puts "all done"
 if(failedItems.size() > 0)
 	window.openTab("workbench",{"search"=>"guid:(" + failedItems.join(" OR " ) + ")"})
 	show_message("Items in this tab are needing new pilots drawn")
